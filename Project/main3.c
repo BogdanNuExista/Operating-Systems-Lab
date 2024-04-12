@@ -65,12 +65,14 @@ void create_or_update_snapshot(const char *dir_path, const char *output_dir) {
         // Generate metadata for the entry
         generate_metadata(entry_path, entry_metadata);
 
-        // Write metadata to snapshot file
-        if (write(snapshot_fd, entry_metadata, strlen(entry_metadata)) == -1) {
-            perror("Failed to write metadata to snapshot file");
-            closedir(dir);
-            close(snapshot_fd);
-            exit(EXIT_FAILURE);
+        // Write metadata to snapshot file only if it's not a directory
+        if(entry->d_type!=4){
+            if (write(snapshot_fd, entry_metadata, strlen(entry_metadata)) == -1) {
+                perror("Failed to write metadata to snapshot file");
+                closedir(dir);
+                close(snapshot_fd);
+                exit(EXIT_FAILURE);
+            }
         }
         
         // If entry is a directory, recursively call create_or_update_snapshot()
