@@ -7,7 +7,7 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <time.h>
-// #include <wait.h>
+#include <wait.h>
 
 #define MAX_PATH_LENGTH 1024
 #define MAX_METADATA_LENGTH 1024
@@ -107,12 +107,13 @@ int main(int argc, char *argv[]) {
         else if(pid==0)
         {
             create_or_update_snapshot(argv[i], output_dir);
-            /// exit(EXIT_SUCCESS);
+            exit(EXIT_SUCCESS);
         }
-
-        int status;
-        while(wait(&status)>0);
+       
     }
+
+    int status;
+    while(wait(&status)>0);
 
     return 0;
 }
