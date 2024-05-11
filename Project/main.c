@@ -9,6 +9,7 @@
 #include <time.h>
 #include <sys/wait.h>
 #include <stdbool.h>
+#include <libgen.h>
 
 #define MAX_PATH_LENGTH 1024
 #define MAX_METADATA_LENGTH 1024
@@ -35,36 +36,76 @@ void generate_metadata(const char *path, char *metadata) {
     free(file_stat); 
 }
 
-bool malicious_check_result; // Global variable to store the result of the malicious check
+#define READ_END 0
+#define WRITE_END 1
+
+
 
 void execute_malicious_check_script(const char *file_path) {
+    int pipe_fd[2]; // Declare the pipe file descriptors
+
+    if (pipe(pipe_fd) == -1) { // Create the pipe
+        perror("Pipe creation failed");
+        exit(EXIT_FAILURE);
+    }
+
     pid_t pid = fork(); // Create a new process
 
     if (pid < 0) {
         perror("Fork failed");
-        malicious_check_result = false;
+        exit(EXIT_FAILURE);
     } else if (pid == 0) {
         // Child process
+        close(pipe_fd[READ_END]); // Close unused read end
+        
+        close(pipe_fd[WRITE_END]); // Close write end
+        // Execute the malicious check script
         execl("./verify_for_malicious.sh", "./verify_for_malicious.sh", file_path, NULL);
         // If execl returns, it means it failed
         perror("execl failed");
         exit(EXIT_FAILURE);
     } else {
         // Parent process
+        close(pipe_fd[WRITE_END]); // Close unused write end
+        // Read the result from the pipe
+        char result[MAX_PATH_LENGTH];
+        ssize_t bytes_read = read(pipe_fd[READ_END], result, MAX_PATH_LENGTH - 1); // Read into buffer
+        if (bytes_read == -1) {
+            perror("Failed to read from pipe");
+            exit(EXIT_FAILURE);
+        }
+        result[bytes_read] = '\0'; // Null-terminate the string
+        close(pipe_fd[READ_END]); // Close read end
+        // Print the result
+        printf("Result for file %s:\n%s\n", file_path, result);
+
+        // Check the exit status of the script
         int status;
-        waitpid(pid, &status, 0); // Wait for the child process to finish
-        // Check if the child process exited normally
+        waitpid(pid, &status, 0);
+        printf("STATUS : %d\n\n", WEXITSTATUS(status));
         if (WIFEXITED(status)) {
-            // Extract the exit status of the child process
-            int exit_status = WEXITSTATUS(status);
-            // Set global variable based on the exit status
-            malicious_check_result = (exit_status == 0);
+            if (WEXITSTATUS(status) == 2) {
+                // Move the file to the MaliciousFiles directory
+                printf("HERE\n");
+                char destination[MAX_PATH_LENGTH];
+                snprintf(destination, MAX_PATH_LENGTH, "%s/%s", MALICIOUS_DIR_NAME, basename((char*)file_path));
+
+                if (rename(file_path, destination) != 0) {
+                    perror("Failed to move file to MaliciousFiles directory");
+                    exit(EXIT_FAILURE);
+                }
+                printf("File %s moved to %s\n", file_path, MALICIOUS_DIR_NAME);
+            } else {
+                printf("File %s is safe\n", file_path);
+            }
         } else {
-            perror("Child process did not exit normally");
-            malicious_check_result = false;
+            printf("Child process terminated abnormally\n");
         }
     }
 }
+
+
+
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -106,9 +147,6 @@ void create_or_update_snapshot(const char *dir_path, const char *output_dir) {
         if(entry->d_type == DT_REG){
             if ((access(entry_path, R_OK) == -1) || (access(entry_path, W_OK)==-1)) {
                 execute_malicious_check_script(entry_path);
-
-                if(malicious_check_result==0)
-                    continue; /// Do not do the snapshot for a malicious file
             }
         }
 
@@ -132,7 +170,7 @@ void create_or_update_snapshot(const char *dir_path, const char *output_dir) {
     closedir(dir);
     close(snapshot_fd);
 
-    printf("Snapshot for directory %s created or updated successfully.\n", dir_path);
+    printf("Snapshot for directory %s created or updated successfully.\n\n", dir_path);
 }
 
 int main(int argc, char *argv[]) {
