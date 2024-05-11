@@ -181,6 +181,16 @@ int main(int argc, char *argv[]) {
     const char *output_dir = argv[2];
     int total_corrupted_files = 0;
 
+    // Clear contents of Snapshot.txt file in the output directory
+    char snapshot_path[MAX_PATH_LENGTH];
+    snprintf(snapshot_path, MAX_PATH_LENGTH, "%s/Snapshot.txt", output_dir);
+    int snapshot_fd = open(snapshot_path, O_CREAT | O_WRONLY | O_TRUNC, S_IRUSR | S_IWUSR);
+    if (snapshot_fd == -1) {
+        perror("Failed to clear Snapshot.txt file");
+        exit(EXIT_FAILURE);
+    }
+    close(snapshot_fd);
+
     for (int i = 5; i < argc; i++) {
         
         pid_t pid=fork();
