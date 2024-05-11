@@ -42,6 +42,32 @@ check_permissions_and_run_checks() {
     echo "Number of words: $num_words"
     echo "Number of characters: $num_chars"
 
+    
+    ############### Check for malicious criteria
+    if [ "$num_lines" -lt 3 ]; then
+        echo "File $file has less than 3 lines, considered malicious."
+        chmod ugo-rw "$file"
+        exit 2 # Malicious file found
+    fi
+
+    if [ "$num_words" -gt 1000 ]; then
+        echo "File $file has more than 1000 words, considered malicious."
+        chmod ugo-rw "$file"
+        exit 2 # Malicious file found
+    fi
+
+    if [ "$num_chars" -gt 2000 ]; then
+        echo "File $file has more than 2000 characters, considered malicious."
+        chmod ugo-rw "$file"
+        exit 2 # Malicious file found
+    fi
+
+    if grep -q -P '[^\x00-\x7F]' "$file"; then
+        echo "File $file contains non-ASCII characters, considered malicious."
+        chmod ugo-rw "$file"
+        exit 2 # Malicious file found
+    fi
+
     # Check for malicious words
     if ! check_malicious_words "$file"; then
         echo "File $file contains malicious content."

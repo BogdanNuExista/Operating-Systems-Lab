@@ -17,8 +17,8 @@
 #define READ_END 0
 #define WRITE_END 1
 
+// Function to generate metadata for a given file
 void generate_metadata(const char *path, char *metadata) {
-
     struct stat *file_stat = malloc(sizeof(struct stat));
 
     if (lstat(path, file_stat) == -1) {
@@ -36,14 +36,12 @@ void generate_metadata(const char *path, char *metadata) {
     free(file_stat); 
 }
 
-#define READ_END 0
-#define WRITE_END 1
+bool current_file_is_mal;
 
-
-
+// Function to execute the malicious check script on a file
 void execute_malicious_check_script(const char *file_path) {
     int pipe_fd[2]; // Declare the pipe file descriptors
-
+    
     if (pipe(pipe_fd) == -1) { // Create the pipe
         perror("Pipe creation failed");
         exit(EXIT_FAILURE);
@@ -83,12 +81,13 @@ void execute_malicious_check_script(const char *file_path) {
         int status;
         waitpid(pid, &status, 0);
         printf("STATUS : %d\n\n", WEXITSTATUS(status));
+        current_file_is_mal = false;
         if (WIFEXITED(status)) {
             if (WEXITSTATUS(status) == 2) {
                 // Move the file to the MaliciousFiles directory
-                printf("HERE\n");
                 char destination[MAX_PATH_LENGTH];
                 snprintf(destination, MAX_PATH_LENGTH, "%s/%s", MALICIOUS_DIR_NAME, basename((char*)file_path));
+                current_file_is_mal = true;
 
                 if (rename(file_path, destination) != 0) {
                     perror("Failed to move file to MaliciousFiles directory");
@@ -104,16 +103,13 @@ void execute_malicious_check_script(const char *file_path) {
     }
 }
 
-
-
-
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-void create_or_update_snapshot(const char *dir_path, const char *output_dir) {
+// Function to create or update a snapshot of a directory
+int create_or_update_snapshot(const char *dir_path, const char *output_dir) {
     DIR *dir;
     struct dirent *entry;
     char snapshot_path[MAX_PATH_LENGTH];
     char entry_metadata[MAX_METADATA_LENGTH];
+    int corrupted_files_count = 0;
 
     // Open directory
     if ((dir = opendir(dir_path)) == NULL) {
@@ -147,6 +143,8 @@ void create_or_update_snapshot(const char *dir_path, const char *output_dir) {
         if(entry->d_type == DT_REG){
             if ((access(entry_path, R_OK) == -1) || (access(entry_path, W_OK)==-1)) {
                 execute_malicious_check_script(entry_path);
+                if(current_file_is_mal==true)
+                    corrupted_files_count++;
             }
         }
 
@@ -162,7 +160,7 @@ void create_or_update_snapshot(const char *dir_path, const char *output_dir) {
         
         // If entry is a directory, recursively call create_or_update_snapshot()
         if (entry->d_type == DT_DIR) {
-            create_or_update_snapshot(entry_path, output_dir);
+            corrupted_files_count += create_or_update_snapshot(entry_path, output_dir);
         }
     }
 
@@ -170,7 +168,9 @@ void create_or_update_snapshot(const char *dir_path, const char *output_dir) {
     closedir(dir);
     close(snapshot_fd);
 
-    printf("Snapshot for directory %s created or updated successfully.\n\n", dir_path);
+    printf("Snapshot for directory %s created or updated successfully. Corrupted files found: %d\n\n", dir_path, corrupted_files_count);
+
+    return corrupted_files_count;
 }
 
 int main(int argc, char *argv[]) {
@@ -179,6 +179,7 @@ int main(int argc, char *argv[]) {
     }
 
     const char *output_dir = argv[2];
+    int total_corrupted_files = 0;
 
     for (int i = 5; i < argc; i++) {
         
@@ -190,14 +191,19 @@ int main(int argc, char *argv[]) {
         }
         else if(pid==0)
         {
-            create_or_update_snapshot(argv[i], output_dir);
-            exit(EXIT_SUCCESS);
+            int corrupted_files_count = create_or_update_snapshot(argv[i], output_dir);
+            exit(corrupted_files_count);
         }
-       
+        else {
+            int child_status;
+            wait(&child_status);
+            if (WIFEXITED(child_status)) {
+                total_corrupted_files += WEXITSTATUS(child_status);
+            }
+        }
     }
 
-    int status;
-    while(wait(&status)>0);
+    printf("Total corrupted files found: %d\n", total_corrupted_files);
 
     return 0;
 }
