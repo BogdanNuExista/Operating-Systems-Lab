@@ -204,12 +204,12 @@ int main(int argc, char *argv[]) {
             int corrupted_files_count = create_or_update_snapshot(argv[i], output_dir);
             exit(corrupted_files_count);
         }
-        else {
-            int child_status;
-            wait(&child_status);
-            if (WIFEXITED(child_status)) {
-                total_corrupted_files += WEXITSTATUS(child_status);
-            }
+    }
+
+    int status;
+    while(wait(&status) > 0) {
+        if (WIFEXITED(status)) {
+            total_corrupted_files += WEXITSTATUS(status);
         }
     }
 
